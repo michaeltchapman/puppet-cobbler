@@ -3,8 +3,10 @@
 #
 # generated from cobbler dhcp.conf template ($date)
 # Do NOT make changes to /etc/dhcpd.conf. Instead, make your changes
-# in /etc/cobbler/dhcp.template, as /etc/dhcp/dhcpd.conf will be
+# in /etc/cobbler/dhcp.template, as /etc/dhcpd.conf will be
 # overwritten.
+#
+# /etc/cobbler/dhcp.template is managed by puppet
 #
 # ******************************************************************
 
@@ -16,19 +18,27 @@ allow bootp;
 ignore client-updates;
 set vendorclass = option vendor-class-identifier;
 
-subnet <%= node_subnet %> netmask <%= node_netmask %> {
-<%-if node_gateway %>
-     option routers             <%= node_gateway %>;
-<%-end %>
-     option domain-name-servers <%= node_dns %>;
-     option domain-name         "<%= domain_name %>";
-     option subnet-mask         <%= node_netmask %>;
-     server-identifier          <%= ip %>;
-     filename                   "/pxelinux.0";
-     default-lease-time         21600;
-     max-lease-time             43200;
-     next-server                $next_server;
+<% dhcp_interfaces.each do |iface| -%>
+subnet <%= instance_variable_get("@ipaddress_#{iface}").match(/\d+\.\d+\.\d+/) %>.0 netmask 255.255.255.0 {
+    option domain-name          "<%= domain %>";
+    option subnet-mask          255.255.255.0;
+    option domain-name-servers  <%=
+if nameservers.kind_of?(Array)
+   nameservers.join(", ")
+elsif (nameservers.kind_of?(String) && nameservers != '' )
+   nameservers
+else
+   puts("127.0.0.1")
+end %>;
+    option routers              <%= instance_variable_get("@ipaddress_#{iface}").match(/\d+\.\d+\.\d+/) %>.1;
+    filename                    "/pxelinux.0";<% if dhcp_dynamic_range == 1 then %>
+    range dynamic-bootp         <%= instance_variable_get("@ipaddress_#{iface}").match(/\d+\.\d+\.\d+/) %>.100 <%= instance_variable_get("@ipaddress_#{iface}").match(/\d+\.\d+\.\d+/) %>.200;<% end %>
+    default-lease-time          21600;
+    max-lease-time              43200;
+    next-server                 $next_server;
 }
+<% end -%>
+
 
 #for dhcp_tag in $dhcp_tags.keys():
     ## group could be subnet if your dhcp tags line up with your subnets
@@ -47,8 +57,8 @@ group {
         #if $iface.hostname:
         option host-name "$iface.hostname";
         #end if
-        #if $iface.netmask:
-        option subnet-mask $iface.netmask;
+        #if $iface.subnet:
+        option subnet-mask $iface.subnet;
         #end if
         #if $iface.gateway:
         option routers $iface.gateway;
